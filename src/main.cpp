@@ -1,5 +1,5 @@
 #include <glad/glad.h>
-#include <SFML/Window.hpp>
+#include <GLFW/glfw3.h>
 #include <iostream>
 #include <cmath>
 #include <glm/glm.hpp>
@@ -19,123 +19,101 @@ const char* vertexShaderSrc = R"(
 const char* fragmentShaderSrc = R"(
     #version 330 core
     out vec4 FragColor;
-    uniform vec4 uColor;
     void main() {
         FragColor = vec4(0.2, 0.7, 0.9, 1.0);
     }
 )";
 
 GLuint createShaderProgram(const char* vtxSrc, const char* fragSrc) {
-    GLuint vertexShader = glCreateShader(GL_VERTEX_SHADER);
-    glShaderSource(vertexShader, 1, &vtxSrc, nullptr);
-    glCompileShader(vertexShader);
+    auto compile = [](GLenum type, const char* src) {
+        GLuint shader = glCreateShader(type);
+        glShaderSource(shader, 1, &src, nullptr);
+        glCompileShader(shader);
+        GLint success;
+        glGetShaderiv(shader, GL_COMPILE_STATUS, &success);
+        if (!success) {
+            char log[512];
+            glGetShaderInfoLog(shader, 512, nullptr, log);
+            std::cerr << "Shader compile error:\n" << log << std::endl;
+        }
+        return shader;
+    };
 
-    GLint success;
-    glGetShaderiv(vertexShader, GL_COMPILE_STATUS, &success);
-    if (!success) {
-        char log[512];
-        glGetShaderInfoLog(vertexShader, 512, nullptr, log);
-        std::cerr << "Vertex Shader Error:\n" << log << "\n";
-    }
-
-    GLuint fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
-    glShaderSource(fragmentShader, 1, &fragSrc, nullptr);
-    glCompileShader(fragmentShader);
-
-    glGetShaderiv(fragmentShader, GL_COMPILE_STATUS, &success);
-    if (!success) {
-        char log[512];
-        glGetShaderInfoLog(fragmentShader, 512, nullptr, log);
-        std::cerr << "Fragment Shader Error:\n" << log << "\n";
-    }
+    GLuint vs = compile(GL_VERTEX_SHADER, vtxSrc);
+    GLuint fs = compile(GL_FRAGMENT_SHADER, fragSrc);
 
     GLuint program = glCreateProgram();
-    glAttachShader(program, vertexShader);
-    glAttachShader(program, fragmentShader);
+    glAttachShader(program, vs);
+    glAttachShader(program, fs);
     glLinkProgram(program);
 
+    GLint success;
     glGetProgramiv(program, GL_LINK_STATUS, &success);
     if (!success) {
         char log[512];
         glGetProgramInfoLog(program, 512, nullptr, log);
-        std::cerr << "Shader Linking Error:\n" << log << "\n";
+        std::cerr << "Program link error:\n" << log << std::endl;
     }
 
-    glDeleteShader(vertexShader);
-    glDeleteShader(fragmentShader);
-
+    glDeleteShader(vs);
+    glDeleteShader(fs);
     return program;
 }
 
 int main() {
-    // SFML context
-    sf::ContextSettings settings;
-    settings.depthBits = 24;
-    settings.stencilBits = 8;
-    settings.antialiasingLevel = 4;
-    settings.majorVersion = 3;
-    settings.minorVersion = 3;
-
-    sf::Window window(sf::VideoMode(800, 600), "OpenGL", sf::Style::Default, settings);
-    window.setVerticalSyncEnabled(true);
-
-    if (!gladLoadGLLoader((GLADloadproc)sf::Context::getFunction)) {
-        std::cerr << "Failed to initialize GLAD!" << std::endl;
+    if (!glfwInit()) {
+        std::cerr << "Failed to initialize GLFW" << std::endl;
         return -1;
     }
 
-    // Create the triangle shape
-    TriangleShape triangle;
-    triangle.setPosition({ 0.0f, 0.0f, 0.0f });
-    triangle.setRotation(0.0f);
-    triangle.setScale({ 2.0f, 1.0f, 1.0f });
-    triangle.setColor({ 1.0f, 0.0f, 0.0f, 1.0f });
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
-    // Set up VAO/VBO
+    GLFWwindow* window = glfwCreateWindow(800, 600, "OpenGL + GLFW", nullptr, nullptr);
+    if (!window) {
+        std::cerr << "Failed to create GLFW window" << std::endl;
+        glfwTerminate();
+        return -1;
+    }
+    glfwMakeContextCurrent(window);
+    glfwSwapInterval(1); // vsync
+
+    if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) {
+        std::cerr << "Failed to init GLAD" << std::endl;
+        return -1;
+    }
+
+    TriangleShape triangle;
+    triangle.setPosition({0.0f, 0.0f, 0.0f});
+    triangle.setRotation(0.0f);
+    triangle.setScale({2.0f, 1.0f, 1.0f});
+    triangle.setColor({1.0f, 0.0f, 0.0f, 1.0f});
+
     GLuint VAO, VBO;
     glGenVertexArrays(1, &VAO);
     glGenBuffers(1, &VBO);
 
     glBindVertexArray(VAO);
     glBindBuffer(GL_ARRAY_BUFFER, VBO);
+    glBufferData(GL_ARRAY_BUFFER,
+                 triangle.getVertices().size() * sizeof(glm::vec3),
+                 triangle.getVertices().data(),
+                 GL_DYNAMIC_DRAW);
 
-    // Upload triangle vertices
-    glBufferData(
-        GL_ARRAY_BUFFER,
-        triangle.getVertices().size() * sizeof(glm::vec3),
-        triangle.getVertices().data(),
-        GL_DYNAMIC_DRAW
-    );
-
-    glVertexAttribPointer(
-        0,
-        3,
-        GL_FLOAT,
-        GL_FALSE,
-        sizeof(glm::vec3),
-        (void*)0
-    );
-
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(glm::vec3), (void*)0);
     glEnableVertexAttribArray(0);
-
     glBindVertexArray(0);
 
-    // Shader program
     GLuint shaderProgram = createShaderProgram(vertexShaderSrc, fragmentShaderSrc);
     GLint transformLoc = glGetUniformLocation(shaderProgram, "uTransform");
 
     float time = 0.0f;
 
-    while (window.isOpen()) {
-        sf::Event event;
-        while (window.pollEvent(event)) {
-            if (event.type == sf::Event::Closed)
-                window.close();
-        }
+    while (!glfwWindowShouldClose(window)) {
+        glfwPollEvents();
 
         time += 0.02f;
-
-        // Build transformation matrix using GLM
         glm::mat4 transform = glm::mat4(1.0f);
         transform = glm::scale(transform, glm::vec3(1.0f + 0.5f * std::sin(time), 1.0f, 1.0f));
         transform = glm::rotate(transform, time, glm::vec3(0.0f, 0.0f, 1.0f));
@@ -145,28 +123,20 @@ int main() {
         glClear(GL_COLOR_BUFFER_BIT);
 
         glUseProgram(shaderProgram);
-        glUniformMatrix4fv(
-            transformLoc,
-            1,
-            GL_FALSE,
-            glm::value_ptr(transform)
-        );
+        glUniformMatrix4fv(transformLoc, 1, GL_FALSE, glm::value_ptr(transform));
 
         glBindVertexArray(VAO);
-
-        glDrawArrays(
-            GL_TRIANGLES, // Type we want to draw
-            0,
-            static_cast<GLsizei>(triangle.getVertices().size())
-        );
-
+        glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(triangle.getVertices().size()));
         glBindVertexArray(0);
-        window.display();
+
+        glfwSwapBuffers(window);
     }
 
     glDeleteVertexArrays(1, &VAO);
     glDeleteBuffers(1, &VBO);
     glDeleteProgram(shaderProgram);
 
+    glfwDestroyWindow(window);
+    glfwTerminate();
     return 0;
 }
