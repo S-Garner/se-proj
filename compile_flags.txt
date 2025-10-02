@@ -1,0 +1,2 @@
+-Iinclude
+-I_deps/glfw-src/include
