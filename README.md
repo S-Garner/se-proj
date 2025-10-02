@@ -23,3 +23,8 @@ cmake ..
 make
 ```
 
+### Running for Linux/macOS
+
+```
+./se-proj
+```
